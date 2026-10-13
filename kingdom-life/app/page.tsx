@@ -3,138 +3,173 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 
-const AREAS = {
-  surulere: {name: "Surulere", x: 100, y: 300, color: "#a855f7", risk: 0.2, reward: 2},
-  oshodi: {name: "Oshodi", x: 250, y: 250, color: "#ef4444", risk: 0.4, reward: 5},
-  yaba: {name: "Yaba", x: 400, y: 250, color: "#22c55e", risk: 0.15, reward: 1},
-  ikeja: {name: "Ikeja", x: 400, y: 100, color: "#3b82f6", risk: 0.25, reward: 3},
-  lekki: {name: "Lekki", x: 650, y: 280, color: "#06b6d4", risk: 0.15, reward: 4},
-  ajah: {name: "Ajah", x: 650, y: 400, color: "#f59e0b", risk: 0.1, reward: 2},
-  alaba: {name: "Alaba", x: 100, y: 100, color: "#ec4899", risk: 0.3, reward: 6},
+const LOCATIONS = {
+  church: { name: "Church HQ", x: 400, y: 350, color: "#22c55e", type: "work", souls: 1, desc: "Sunday Service - Restore Spirit" },
+  oshodi: { name: "Oshodi Market", x: 220, y: 280, color: "#ef4444", type: "evangelism", souls: 5, desc: "Hot market! Many souls but area boys" },
+  yaba: { name: "Yaba Campus", x: 420, y: 220, color: "#3b82f6", type: "revival", souls: 3, desc: "UNILAG Revival - Students ready" },
+  lekki: { name: "Lekki Crusade Ground", x: 620, y: 260, color: "#06b6d4", type: "crusade", souls: 8, desc: "Big crusade! Need 50 energy" },
+  alaba: { name: "Alaba Soul Market", x: 120, y: 120, color: "#a855f7", type: "evangelism", souls: 6, desc: "Traders = Alaba multiplier" },
+  ajah: { name: "Ajah Estate Outreach", x: 620, y: 400, color: "#f59e0b", type: "house-to-house", souls: 2, desc: "Door to door, easy souls" },
+  mushin: { name: "Mushin Hostel", x: 150, y: 400, color: "#78716c", type: "home", souls: 0, desc: "Your home - Sleep to restore energy" },
 };
-const AREA_IDS = Object.keys(AREAS);
+const JOBS = [
+  { id: "usher", name: "Usher", pay: 2000, energy: -20, spirit: +10 },
+  { id: "choir", name: "Choir", pay: 3500, energy: -15, spirit: +15 },
+  { id: "media", name: "Media Team", pay: 6000, energy: -25, spirit: +5 },
+  { id: "evangelist", name: "Lead Evangelist", pay: 12000, energy: -35, spirit: +25 },
+];
 
-export default function Game() {
-  const [game, setGame] = useState({ spirit: 100, souls: 0, money: 5000, player: {x: 400, y: 250}, lang: "EN" });
-  const [currentArea, setCurrentArea] = useState(null);
-  const [message, setMessage] = useState("Use WASD or joystick to walk!");
-  const keysRef = useRef({});
+export default function KingdomLagosLife() {
+  const [player, setPlayer] = useState({ x: 400, y: 350 });
+  const [target, setTarget] = useState(null);
+  const [stats, setStats] = useState({ spirit: 80, energy: 100, hunger: 70, joy: 60, anointing: 50, souls: 0, money: 5000 });
+  const [near, setNear] = useState(null);
+  const [log, setLog] = useState(["Welcome to Kingdom Lagos! Click anywhere to trek and win souls."]);
+  const [job, setJob] = useState(JOBS[0]);
+  const [day, setDay] = useState("Monday");
+  const mapRef = useRef(null);
 
-  // Load save
+  // REAL CLICK TO MOVE LIKE LAGOS LIFE
+  const handleMapClick = (e) => {
+    const rect = mapRef.current.getBoundingClientRect();
+    const tx = e.clientX - rect.left;
+    const ty = e.clientY - rect.top;
+    setTarget({ x: tx, y: ty });
+    addLog(`Trekking to (${Math.round(tx)}, ${Math.round(ty)})...`);
+  };
+
+  // Movement loop
   useEffect(() => {
-    try {
-      const s = localStorage.getItem("kingdom-life-v2");
-      if (s) setGame(JSON.parse(s));
-    } catch {}
-  }, []);
-  // Save
-  useEffect(() => { localStorage.setItem("kingdom-life-v2", JSON.stringify(game)); }, [game]);
-
-  // Keyboard
-  useEffect(() => {
-    const d = (e) => { keysRef.current[e.key.toLowerCase()] = true; };
-    const u = (e) => { keysRef.current[e.key.toLowerCase()] = false; };
-    window.addEventListener("keydown", d);
-    window.addEventListener("keyup", u);
-    return () => { window.removeEventListener("keydown", d); window.removeEventListener("keyup", u); };
-  }, []);
-
-  // MOVEMENT LOOP - FIXED
-  useEffect(() => {
-    const loop = setInterval(() => {
-      const k = keysRef.current;
-      let dx = 0, dy = 0;
-      if (k["w"] || k["arrowup"]) dy = -4;
-      if (k["s"] || k["arrowdown"]) dy = 4;
-      if (k["a"] || k["arrowleft"]) dx = -4;
-      if (k["d"] || k["arrowright"]) dx = 4;
-
-      if (dx!==0 || dy!==0) {
-        setGame(g => {
-          let nx = Math.max(15, Math.min(785, g.player.x + dx));
-          let ny = Math.max(15, Math.min(485, g.player.y + dy));
-          // check area
-          for (let id of AREA_IDS) {
-            let a = AREAS[id];
-            if (Math.hypot(nx - a.x, ny - a.y) < 60) {
-              if (currentArea!== id) {
-                setCurrentArea(id);
-                setMessage(`Entered ${a.name} - Press WIN SOUL!`);
+    if (!target) return;
+    const interval = setInterval(() => {
+      setPlayer(p => {
+        const dx = target.x - p.x;
+        const dy = target.y - p.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 5) {
+          clearInterval(interval);
+          setTarget(null);
+          // check if near location
+          for (let id in LOCATIONS) {
+            let loc = LOCATIONS[id];
+            if (Math.hypot(p.x - loc.x, p.y - loc.y) < 60) {
+              setNear(id);
+              addLog(`Arrived at ${loc.name}: ${loc.desc}`);
+              // random roadside encounter
+              if (Math.random() < 0.6) {
+                setTimeout(() => triggerEncounter(id), 500);
               }
               break;
             }
           }
-          return {...g, player: {x: nx, y: ny}};
-        });
-      }
+          return p;
+        }
+        return { x: p.x + dx * 0.08, y: p.y + dy * 0.08 };
+      });
     }, 16);
-    return () => clearInterval(loop);
-  }, [currentArea]);
+    return () => clearInterval(interval);
+  }, [target]);
+
+  const addLog = (msg) => setLog(l => [msg,...l].slice(0, 5));
+
+  const triggerEncounter = (locId) => {
+    const loc = LOCATIONS[locId];
+    const events = [
+      { text: `A girl in ${loc.name} says: "I need hope" - Share Jesus?`, win: loc.souls, spirit: 5 },
+      { text: `Danfo driver shouts: "Oga, you get message?" - Preach!`, win: loc.souls + 1, spirit: 10 },
+      { text: `Area boy: "Wetin you carry?" - Show love!`, win: 0, spirit: -10, money: -500 },
+      { text: `Small revival broke out! People gathering!`, win: loc.souls * 2, spirit: 20 },
+    ];
+    const ev = events[Math.floor(Math.random() * events.length)];
+    addLog(ev.text);
+  };
 
   const winSoul = () => {
-    if (!currentArea) { setMessage("Walk into a colored area first!"); return; }
-    const area = AREAS[currentArea];
-    if (Math.random() < area.risk) {
-      setGame(g => ({...g, money: g.money - 1000, spirit: Math.min(100, g.spirit + 10)}));
-      setMessage("Area boy! -N1000 but +10 Spirit");
+    if (!near) return addLog("Walk into a location first!");
+    if (stats.energy < 10) return addLog("No energy! Go home to Mushin to sleep.");
+    const loc = LOCATIONS[near];
+    if (near === "alaba") {
+      // Alaba multiplier from your original idea
+      const won = loc.souls + Math.floor(Math.random() * 5);
+      setStats(s => ({...s, souls: s.souls + won, energy: s.energy - 10, spirit: Math.min(100, s.spirit + 5), joy: Math.min(100, s.joy + 5) }));
+      addLog(`Alaba multiplier! You won ${won} souls and they brought friends!`);
     } else {
-      setGame(g => ({...g, souls: g.souls + area.reward, spirit: Math.min(100, g.spirit + 5)}));
-      setMessage(`You won ${area.reward} souls in ${area.name}!`);
+      setStats(s => ({...s, souls: s.souls + loc.souls, energy: s.energy - 10, anointing: Math.min(100, s.anointing + 3) }));
+      addLog(`Souls won! +${loc.souls} in ${loc.name}`);
     }
   };
 
-  const goTo = (id) => {
-    if (game.money < 500) { setMessage("No money for danfo! Need N500"); return; }
-    setGame(g => ({...g, money: g.money - 500, player: {x: AREAS[id].x, y: AREAS[id].y}}));
-    setCurrentArea(id);
-    setMessage(`Danfo to ${AREAS[id].name}!`);
+  const doJob = () => {
+    setStats(s => ({...s, money: s.money + job.pay, energy: Math.max(0, s.energy + job.energy), spirit: Math.min(100, s.spirit + job.spirit), hunger: Math.max(0, s.hunger - 15) }));
+    addLog(`Worked as ${job.name}: +₦${job.pay}`);
   };
 
-  // Touch controls
-  const hold = (key, v) => {
-    if (v) keysRef.current[key] = true;
-    else delete keysRef.current[key];
+  const sleep = () => {
+    setStats(s => ({...s, energy: 100, hunger: Math.max(0, s.hunger - 10), spirit: Math.min(100, s.spirit + 10) }));
+    addLog("Slept at Mushin Hostel - Energy restored!");
+    // rent check
+    if (day === "Sunday") {
+      setStats(s => ({...s, money: Math.max(0, s.money - 1500) }));
+      addLog("Sunday! Hostel rent paid: -₦1500");
+    }
   };
 
   return (
-    <div style={{background: "#0f172a", color: "white", minHeight: "100vh", padding: 10, userSelect: "none"}}>
-      <h1 style={{fontWeight: 900}}>KINGDOM LIFE - GTA LAGOS v3 WORKING</h1>
-      <div style={{display: "flex", gap: 8, margin: "10px 0", flexWrap: "wrap"}}>
-        <span style={{background: "#1e293b", padding: "6px 12px", borderRadius: 6}}>Spirit: {game.spirit}</span>
-        <span style={{background: "#1e293b", padding: "6px 12px", borderRadius: 6}}>Souls: {game.souls}</span>
-        <span style={{background: "#1e293b", padding: "6px 12px", borderRadius: 6}}>Money: ₦{game.money}</span>
-      </div>
+    <div style={{ background: "#0a0a0a", color: "white", minHeight: "100vh", fontFamily: "monospace", padding: 8 }}>
+      <div style={{ maxWidth: 900, margin: "0 auto" }}>
+        <h1 style={{ fontWeight: 900, fontSize: 20 }}>KINGDOM LIFE - LAGOS FOR JESUS ✝️</h1>
+        <p style={{ color: "#aaa", fontSize: 12 }}>Click map to trek like Lagos Life. Win souls on the roadside.</p>
 
-      <div style={{position: "relative", background: "#fde68a", border: "4px solid black", width: "100%", maxWidth: 800, height: 500, borderRadius: 12, overflow: "hidden"}}>
-        {AREA_IDS.map(id => {
-          let a = AREAS[id];
-          return <div key={id} style={{position: "absolute", left: a.x-35, top: a.y-20, background: currentArea===id? "white" : a.color, color: currentArea===id? "black" : "white", padding: "6px 10px", borderRadius: 8, fontWeight: 800, border: "2px solid black", fontSize: 12}}>{a.name}</div>
-        })}
-        <div style={{position: "absolute", left: game.player.x-12, top: game.player.y-12, width: 26, height: 26, background: "#22c55e", borderRadius: "50%", border: "3px solid white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16}}>✝️</div>
-      </div>
+        {/* NEEDS BARS LIKE LAGOS LIFE */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, margin: "10px 0" }}>
+          <div>Spirit <div style={{ background: "#222", height: 8, borderRadius: 4 }}><div style={{ width: `${stats.spirit}%`, background: "#22c55e", height: 8 }} /></div></div>
+          <div>Energy <div style={{ background: "#222", height: 8 }}><div style={{ width: `${stats.energy}%`, background: "#f59e0b", height: 8 }} /></div></div>
+          <div>Hunger <div style={{ background: "#222", height: 8 }}><div style={{ width: `${stats.hunger}%`, background: "#ef4444", height: 8 }} /></div></div>
+          <div>Anointing <div style={{ background: "#222", height: 8 }}><div style={{ width: `${stats.anointing}%`, background: "#a855f7", height: 8 }} /></div></div>
+          <div>Joy {stats.joy}% | Souls {stats.souls} | ₦{stats.money}</div>
+          <div>Day: {day} - Job: {job.name}</div>
+        </div>
 
-      <p style={{color: "#facc15", fontWeight: 800, margin: "12px 0", minHeight: 20}}>{message}</p>
+        {/* MAP - CLICK TO MOVE */}
+        <div ref={mapRef} onClick={handleMapClick} style={{ position: "relative", width: "100%", height: 520, background: "#fde68a", borderRadius: 12, overflow: "hidden", border: "4px solid #222", cursor: "crosshair" }}>
+          {/* Roads */}
+          <div style={{ position: "absolute", left: 0, right: 0, top: 260, height: 20, background: "#444" }} />
+          <div style={{ position: "absolute", left: 350, top: 0, bottom: 0, width: 20, background: "#444" }} />
 
-      {/* CONTROLS - ALWAYS VISIBLE */}
-      <div style={{display: "flex", gap: 10, flexWrap: "wrap"}}>
-        <button onClick={winSoul} style={{background: "#22c55e", padding: "14px 24px", borderRadius: 10, fontWeight: 900, border: "none", color: "white", fontSize: 16}}>WIN SOUL</button>
-        <button onClick={()=>{setGame(g=>({...g, spirit: 100})); setMessage("Devotion done! Spirit 100");}} style={{background: "#3b82f6", padding: "14px 24px", borderRadius: 10, border: "none", color: "white"}}>DEVOTION</button>
-      </div>
+          {/* Danfos moving */}
+          <div style={{ position: "absolute", left: `${(Date.now()/20)%800}px`, top: 263, background: "#eab308", padding: "2px 6px", borderRadius: 4, color: "black", fontSize: 10, fontWeight: 900 }}>DANFO</div>
 
-      {/* JOYSTICK FOR MOBILE */}
-      <div style={{marginTop: 15, display: "grid", gridTemplateColumns: "60px 60px 60px", gap: 5, width: 190}}>
-        <div></div>
-        <button onTouchStart={()=>hold("w", true)} onTouchEnd={()=>hold("w", false)} onMouseDown={()=>hold("w", true)} onMouseUp={()=>hold("w", false)} style={{height: 55, fontSize: 22, borderRadius: 10}}>↑</button>
-        <div></div>
-        <button onTouchStart={()=>hold("a", true)} onTouchEnd={()=>hold("a", false)} onMouseDown={()=>hold("a", true)} onMouseUp={()=>hold("a", false)} style={{height: 55, fontSize: 22, borderRadius: 10}}>←</button>
-        <button onTouchStart={()=>hold("s", true)} onTouchEnd={()=>hold("s", false)} onMouseDown={()=>hold("s", true)} onMouseUp={()=>hold("s", false)} style={{height: 55, fontSize: 22, borderRadius: 10}}>↓</button>
-        <button onTouchStart={()=>hold("d", true)} onTouchEnd={()=>hold("d", false)} onMouseDown={()=>hold("d", true)} onMouseUp={()=>hold("d", false)} style={{height: 55, fontSize: 22, borderRadius: 10}}>→</button>
-      </div>
+          {/* Locations */}
+          {Object.entries(LOCATIONS).map(([id, loc]) => (
+            <div key={id} style={{ position: "absolute", left: loc.x - 40, top: loc.y - 20, background: near === id? "white" : loc.color, color: near === id? "black" : "white", padding: "6px 10px", borderRadius: 8, fontWeight: 900, fontSize: 11, border: "2px solid black", textAlign: "center" }}>
+              {loc.name}<div style={{ fontSize: 8, fontWeight: 400 }}>+{loc.souls} souls</div>
+            </div>
+          ))}
 
-      <div style={{marginTop: 15, display: "flex", gap: 6, flexWrap: "wrap"}}>
-        {AREA_IDS.map(id => (
-          <button key={id} onClick={()=>goTo(id)} disabled={currentArea===id} style={{background: currentArea===id? "#555" : "#eab308", padding: "8px 12px", borderRadius: 8, border: "none", fontWeight: 700}}>{id} (-500)</button>
-        ))}
+          {/* Player - Real walking person */}
+          <div style={{ position: "absolute", left: player.x - 14, top: player.y - 14, transition: "transform 0.1s", transform: target? "scale(1.1)" : "scale(1)", width: 28, height: 28, background: "#16a34a", borderRadius: "50%", border: "3px solid white", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 }}>✝️</div>
+
+          {/* Target */}
+          {target && <div style={{ position: "absolute", left: target.x - 4, top: target.y - 4, width: 8, height: 8, background: "red", borderRadius: "50%", border: "2px solid white" }} />}
+        </div>
+
+        {/* Action Log - Lagos Life style */}
+        <div style={{ background: "#111", borderRadius: 8, padding: 10, marginTop: 10, minHeight: 90 }}>
+          {log.map((l, i) => <div key={i} style={{ fontSize: 13, opacity: 1 - i * 0.2, marginBottom: 4 }}>• {l}</div>)}
+        </div>
+
+        {/* Controls */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          <button onClick={winSoul} style={{ background: "#22c55e", padding: "14px 20px", borderRadius: 10, border: "none", fontWeight: 900, color: "white" }}>PREACH / WIN SOUL</button>
+          <button onClick={doJob} style={{ background: "#3b82f6", padding: "14px 20px", borderRadius: 10, border: "none", color: "white" }}>WORK ({job.name} +₦{job.pay})</button>
+          <button onClick={sleep} style={{ background: "#6b7280", padding: "14px 20px", borderRadius: 10, border: "none", color: "white" }}>SLEEP @ Mushin</button>
+          <button onClick={() => setStats(s => ({...s, hunger: Math.min(100, s.hunger + 30), money: s.money - 500 }))} style={{ background: "#ef4444", padding: "14px 20px", borderRadius: 10, border: "none", color: "white" }}>BUY AMALA ₦500</button>
+        </div>
+
+        {/* Jobs selector */}
+        <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+          {JOBS.map(j => <button key={j.id} onClick={() => setJob(j)} style={{ background: job.id === j.id? "white" : "#222", color: job.id === j.id? "black" : "white", padding: "6px 10px", borderRadius: 6, border: "none", fontSize: 11 }}>{j.name}</button>)}
+        </div>
       </div>
     </div>
   );
